@@ -14,12 +14,15 @@ struct customer_info{ /// use this struct to record the customer information rea
 };
 
 /* global variables */
-
-pthread_mutex_t mutex;
+const int NQUEUE = 2;
 struct timeval init_time; // use this variable to record the simulation start time; No need to use mutex_lock when reading this variable since the value would not be changed by thread once the initial time was set.
+int queue_length[NQUEUE];// variable stores the real-time queue length information; mutex_lock needed
 //double overall_waiting_time; //A global variable to add up the overall waiting time for all customers, every customer add their own waiting time to this variable, mutex_lock is necessary.
 // int queue0_length[NQUEUE];// variable stores the real-time queue length information; mutex_lock needed
 // int queue1_length[NQUEUE];
+
+
+
 
 // int queue_status[NQUEUE]; // variable to record the status of a queue, the value could be idle (not using by any clerk) or the clerk id (1 ~ 4), indicating that the corresponding clerk is now signaling this queue.
 // int winner_selected[NQUEUE] = FALSE; // variable to record if the first customer in a queue has been successfully selected and left the queue.
@@ -40,17 +43,27 @@ typedef struct {
     Customer *head;
     Customer *tail;
     int size;
+    pthread_mutex_t lock;
 } Queue;
 
 //Inititalizer
-void makeQueue(Queue* q){
+void initializeQueue(Queue* q){
     q->head = NULL;
     q->tail = NULL;
     q->size = 0;
+    if (pthread_mutex_init(&q->lock, NULL) != 0){ //mutex initialization
+        printf("\n mutex init failed\n");
+        return 1;
+    }
 }
+
+
+Queue economyQueue;
+Queue businessQueue;
+
 //-----------------------
 // time structure
-double getCurrentSimulationTime(){
+double getCurSystemTime(){
 	
 	struct timeval cur_time;
 	double cur_secs, init_secs;
@@ -70,14 +83,11 @@ void *clerk_entry(void * clerkNum);
 
 int main(int argc, char *argv[]) {
 
-    Queue economyQueue;
-    Queue businessQueue;
-
-    makeQueue(&economyQueue);
-    makeQueue(&businessQueue);
 
 	// initialize all the condition variable and thread lock will be used
-	pthread_mutex_init(&mutex, NULL);
+    initializeQueue(&economyQueue);
+    initializeQueue(&businessQueue);
+    
 	/** Read customer information from txt file and store them in the structure you created 
 		
 		1. Allocate memory(array, link list etc.) to store the customer information.
@@ -115,12 +125,13 @@ int main(int argc, char *argv[]) {
         }
         i++;
     }
-    
+    // store clerk info
     int k = 1;
     for (i = 0; i < NClerks; i++){
         clerk_info[i] = 1;
         k++;
     }
+
     //start simulation time
     gettimeofday(&init_time, NULL); // record simulation start time
 
@@ -163,19 +174,20 @@ void * customer_entry(void * cus_info){
 	fprintf(stdout, "A customer arrives: customer ID %2d. \n", p_myInfo->user_id);
 	
 	/* Enqueue operation: get into either business queue or economy queue by using p_myInfo->class_type*/
-	if (p_myInfo->class_type == 0) {
-        Queue selected = economyQueue;
+    Queue *selected;
+	if (p_myInfo->class_type == 0){
+        selected = &economyQueue;
     } else {
-        selected = businessQueue;
+        selectedQueue = &businessQueue;
     }
-	
-	pthread_mutex_lock(/* mutexLock of selected queue */); 
-	{
-		fprintf(stdout, "A customer enters a queue: the queue ID %1d, and length of the queue %2d. \n", /*...*/);
 
-		enQueue();
-		queue_enter_time = getCurSystemTime();
-		queue_length[cur_queue]++;
+	pthread_mutex_lock(&selectedQueue->lock); 
+	{
+		fprintf(stdout, "A customer enters a queue: the queue ID %1d, and length of the queue %2d. \n", p_myInfo->user_id,queue_length[0]);
+
+		enQueue(selectedQueue, p_myInfo);
+		double queue_enter_time = getCurSystemTime();
+	    selectedQueue->size++;
 		
 		while (TRUE) {
 			pthread_cond_wait(/* cond_var of selected queue */, /* mutexLock of selected queue */);
@@ -188,7 +200,7 @@ void * customer_entry(void * cus_info){
 		}
 			
 	}
-	pthread_mutex_unlock(/*mutexLock of selected queue*/); //unlock mutex_lock such that other customers can enter into the queue
+	pthread_mutex_unlock(&selectedQueue->lock); //unlock mutex_lock such that other customers can enter into the queue
 	
 	/* Try to figure out which clerk awoken me, because you need to print the clerk Id information */
 	usleep(10); // Add a usleep here to make sure that all the other waiting threads have already got back to call pthread_cond_wait. 10 us will not harm your simulation time.
