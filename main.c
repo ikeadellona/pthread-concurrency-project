@@ -13,7 +13,6 @@ struct customer_info{ /// use this struct to record the customer information rea
 	int arrival_time;
 };
 
-
 /* global variables */
 const int NQUEUE = 2;
 const int NClerks = 5;
@@ -320,7 +319,7 @@ void * customer_entry(void * cus_info){
 	
 	/* get the current machine time; */
     double end_time = getCurSystemTime();
-	fprintf(stdout, "A clerk finishes serving a customer: end time %.2f, the customer ID %2d, the clerk ID %1d. \n", end_time, p_myInfo->user_id, clerk_woke_me_up);\
+	fprintf(stdout, "-->>> A clerk finishes serving a customer: end time %.2f, the customer ID %2d, the clerk ID %1d. \n", end_time, p_myInfo->user_id, clerk_woke_me_up);\
 	
 	pthread_cond_signal(&clerk_cv[clerk_woke_me_up - 1]); // Notify the clerk that service is finished, it can serve another customer
 	
@@ -356,7 +355,7 @@ void *clerk_entry(void * clerkNum){
 
         if (selectedQueue != NULL) {
             pthread_mutex_lock(&selectedQueue->lock);
-            winner_selected[selected_queue_id] = 0;
+            winner_selected[selected_queue_id] = 0; //initialize that a customer has not been selected in the queue
             pthread_cond_broadcast(&selectedQueue->cv); // Awake the customer (the one enter into the queue first) from the selected queue
             pthread_cond_wait(&clerk_cv[clerkID-1],&selectedQueue->lock); // waits for customer to finish serving, when it returns wait for customer, or check queue again
             pthread_mutex_unlock(&selectedQueue->lock);
